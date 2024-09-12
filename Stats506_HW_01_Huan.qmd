@@ -1,0 +1,360 @@
+---
+title: "Stats506_HW_01_Huan"
+format: 
+  html:
+    embed-resources: true
+
+editor: visual
+---
+
+github link: <https://github.com/juanitaW12/stats506>
+
+I am not sure whether this link is qualified. Please let me know if I need supply another link
+
+## Load packages
+
+```{r}
+library(readr)
+library(dplyr)
+library(quarto)
+```
+
+## Question One
+
+#### Question 1-a
+
+```{r}
+# import the wine data into a data.frame
+data_path_1 <- file.path( "wine","wine.data")
+wine_data <- read.table(data_path_1, sep = ",", header = FALSE)
+
+# according to wine.names, give column names to winde data
+column_names <- c("Class", "Alcohol", "Malic_Acid", "Ash",
+                  "Alcalinity_of_Ash", "Magnesium", "Total_Phenols",
+                  "Flavanoids", "Nonflavanoid_Phenols",
+                  "Proanthocyanins", "Color_Intensity", "Hue", 
+                  "OD280_OD315_of_Diluted_Wines", "Proline")
+colnames(wine_data) <- column_names
+head(wine_data)
+```
+
+#### Question 1-b
+
+```{r}
+# Check and report that the number of wines within each class
+print(table(wine_data$Class))
+```
+
+According to wine.names, the number of wine in class 1 is 59, the number in class 2 is 71 and the number in class 3 is 48. We can see the these numbers are same as that in wine_data.
+
+So the number of wines within each class is correct as reported in wine.names.
+
+#### Question 1-c-1
+
+```{r}
+# question 1-c-1
+# calculate the correlation between alcohol content and color intensity
+cor(wine_data$Alcohol, wine_data$Color_Intensity)
+```
+
+#### Question 1-c-2
+
+```{r}
+# question 1-c-2
+# calculate the correlation in each class
+
+#' function of correlation in each class
+#'
+#' @param data 
+#' @param wine_class 
+#'
+#' @return correlation(type: double)
+
+correlation_class <- function(data, wine_class){
+  data_class <- subset(data, Class == wine_class)
+  correlation_class <- cor(data_class$Alcohol, 
+                           data_class$Color_Intensity)
+  return(correlation_class)
+}
+
+correlation_class_1 <- correlation_class(wine_data, 1)
+correlation_class_2 <- correlation_class(wine_data, 2)
+correlation_class_3 <- correlation_class(wine_data, 3)
+correlation_classes <- c(correlation_class_1, correlation_class_2,
+                         correlation_class_3)
+
+correlation_classes
+```
+
+We can see the class 1 has the highest correlation and class 2 has the lowest.
+
+#### Question 1-c-3
+
+```{r}
+# question 1-c-3
+# Find the maximum color intensity
+max_color_intensity <- max(wine_data$Color_Intensity)
+
+# Find the alcohol content for this maximum color intensity
+alcohol_max_color <- wine_data$Alcohol[
+  wine_data$Color_Intensity == max_color_intensity]
+alcohol_max_color
+
+```
+
+We can know alcohol content of the wine with the highest color intensity is 14.34.
+
+#### Question 1-c-4
+
+```{r}
+# question 1-c-4
+# wines with higher proanthocyanins than ash
+wine_higher_proan <- wine_data[wine_data$Proanthocyanins 
+                               > wine_data$Ash, ]
+
+# calculate the percentage
+percentage <- nrow(wine_higher_proan)/ nrow(wine_data) *100
+percentage
+```
+
+We can know the percentage of wines which had a higher content of proanthocyanins compare to ash is 8.43%.
+
+#### Question 1-d
+
+```{r}
+# question 1-d
+# calculate the overall average value of each variable
+overall_average <- colMeans(wine_data[, -1])  #except calss
+
+# calculate the average value of each variable with each class
+class_1_average <- colMeans(subset(wine_data, Class == 1)[, -1])  
+class_2_average <- colMeans(subset(wine_data, Class == 2)[, -1])  
+class_3_average <- colMeans(subset(wine_data, Class == 3)[, -1])  
+average_value <- data.frame(overall_average, class_1_average, 
+                            class_2_average,class_3_average)
+average_value
+```
+
+#### Question 1-e
+
+```{r}
+# question 1-e
+# get Total_Phenols data for each class
+class_1_Total_Phenols <- subset(wine_data, Class == 1)$Total_Phenols
+class_2_Total_Phenols <- subset(wine_data, Class == 2)$Total_Phenols
+class_3_Total_Phenols <- subset(wine_data, Class == 3)$Total_Phenols
+
+# Carry out t-tests to examine whether the level of phenols differs
+# class 1 vs class 2
+t.test(class_1_Total_Phenols, class_2_Total_Phenols)
+# class 1 vs class 3
+t.test(class_1_Total_Phenols, class_3_Total_Phenols)
+# class 2 vs class 3
+t.test(class_1_Total_Phenols, class_2_Total_Phenols)
+
+```
+
+According to the t-test results, the p values in each test is less than 0.05. So we can decline the null hypothesis, H0. That is, the level of phenols differs across the three classes.
+
+## Question Two
+
+#### Question 2-a
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+# question 2-a
+# import the AskAManager data
+data_path <- file.path("AskAManager.csv")
+askamanager_data <- read.csv(data_path)
+```
+
+#### Question 2-b
+
+```{r}
+# question 2-b
+# have a look at the column nams of the data
+# colnames(askamanager_data)
+
+# clean up the variable names and simplify them.
+names(askamanager_data) <- c("Index", "Timestamp", "Age", "Industry", "JobTitle",
+                             "AdditionaJobContext", "Salary", "AdditionalMoney",
+                             "Currency", "OtherCurrency","AdditionalIncomeContext",
+                             "Country", "State", "City", "OverallWorkExperience",
+                             "FieldWorkExperience", "Education", "Gender", "Race")
+
+colnames(askamanager_data)
+```
+
+#### Question 2-c
+
+```{r}
+# question 2-c
+# the number of observations before restricting the data.
+nubmer_ob_before <- nrow(askamanager_data)
+
+# restrict the data to those being paid in US dollars (USD)
+askamanager_data_US <- subset(askamanager_data, Currency == 'USD')
+
+# the number of observations after restricting the data.
+nubmer_ob_after <- nrow(askamanager_data_US)
+nubmer_ob_before
+nubmer_ob_after
+```
+
+We can see the number changed from 28062 to 23374 after restricting the data to those being paid in US dollars (USD). So this method worked.
+
+#### Question 2-d-1
+
+```{r}
+# question 2-d
+# translate the data of Age, OverallWorkExperience, FieldWorkExperience to numeric data.
+askamanager_data_US$Age <- factor(askamanager_data_US$Age, ordered = TRUE)
+askamanager_data_US$OverallWorkExperience <- factor(
+  askamanager_data_US$OverallWorkExperience, ordered = TRUE)
+askamanager_data_US$FieldWorkExperience <-factor(askamanager_data_US$FieldWorkExperience,
+                                                  ordered = TRUE)
+
+# investigate the levels of all factor in Age, OverallWorkExperience, FieldWorkExperience to numeric data.
+levels(askamanager_data_US$Age)
+levels(askamanager_data_US$OverallWorkExperience)
+levels(askamanager_data_US$FieldWorkExperience)
+
+```
+
+There are several situations where their age, years of experience in their field, and years of experience total are impossible.
+
+-   Age is less than 18
+
+-   Years of overall work experience is less than that of work in the field.
+
+#### Question 2-d-2
+
+```{r}
+# question 2-d-2
+# Eliminate any rows for which their age, years of experience in their field, and years of experience total are impossible.
+askamanager_US_clean <- filter(askamanager_data_US, Age != "under 18" & 
+                                 (askamanager_data_US$FieldWorkExperience
+                               < askamanager_data_US$OverallWorkExperience) 
+                              )
+```
+
+#### Question 2-e
+
+```{r}
+# question 2-e
+# # calculate the quantile of 5% and 95% to define the maximum and minimum thresholds
+salary_quantiles <- quantile(askamanager_US_clean$Salary, probs = c(0.05, 0.95))
+
+minimum_salary <- as.numeric(salary_quantiles[1])
+maximum_salary <- as.numeric(salary_quantiles[2])
+
+# Eliminate the extrame values
+askamanager_final <- filter(askamanager_US_clean, Salary >= minimum_salary & 
+                              Salary <= maximum_salary)
+
+```
+
+#### Question 2-f
+
+```{r}
+# question 2-f
+# using linear regression to analyse whether there is a statistical association between education and salary
+
+# convert the data type of education to factor
+askamanager_final$Education <- as.factor(askamanager_final$Education)
+
+# 进行线性回归分析
+model <- lm(Salary ~ Education + OverallWorkExperience , data = askamanager_final)
+
+# 输出模型摘要
+summary(model)
+```
+
+Controlling for years of experience, we can see the p values of EducationHigh School, EducationPhD, EducationProfessional degree (MD, JD, etc.) and EducationSome college are less than 0.05, while others P values are more than 0.05. So, to some majors or some kind of jobs, there is a statistical association between education and salary.
+
+## Question Three
+
+**PS: The following code is based on ChatGPT.**
+
+#### Question 3-a
+
+```{r}
+# question 3-a
+
+#' isPalindromi
+#'
+#' @param x an integer
+#'
+#' @return whether the number is Palindromic and the reversed number 
+#' @export
+
+isPalindromic <- function(x) {
+  # Check if the input is a positive integer
+  if (!is.numeric(x) || x <= 0 || x != as.integer(x)) {
+    stop("Input must be a positive integer.")
+  }
+  
+  # convert the numnber to a string
+  x_str <- as.character(x)
+  
+  # reverse xisPalindromic(5)[1]isPalindromic(5)[1]
+  reversed_x_str <- paste(rev(strsplit(x_str, NULL)[[1]]), collapse = "")
+  
+  # Check if a number is palindromic
+  is_palindrome <- x_str == reversed_x_str
+  
+  # convert the X_str to an integer
+  reversed_num <- as.integer(reversed_x_str)
+  return(list(isPalindromic = is_palindrome, reversed = reversed_num))
+}
+
+
+```
+
+#### Question 3-b
+
+```{r}
+# question 3-b
+# to find the next palindromic number strictly greater than the input.
+
+#' isPalindromi
+#'
+#' @param x an integer
+#'
+#' @return the next palindromic biggernumber which is Palindromic 
+#' @export
+
+nextPalindrome <- function(x) {
+  # Check if the input is a positive integer
+  if (!is.numeric(x) || x <= 0 || x != as.integer(x)) {
+    stop("Input must be a positive integer.")
+  }
+  
+  x <- as.integer(x)
+  
+  if (isPalindromic(x)[1] == TRUE) {
+    print("The input number is Palindromic.")
+  }
+    
+  next_x <- x + 1
+  while (isPalindromic(next_x)[1] != TRUE) {
+      next_x <- next_x + 1
+      }
+  print("The next Palindromic number is :")
+  return(next_x)
+}
+
+```
+
+#### Question 3-c
+
+```{r}
+# question 3-c
+nextPalindrome(391)
+nextPalindrome(9928)
+nextPalindrome(19272719)
+nextPalindrome(19272719)
+nextPalindrome(109)
+nextPalindrome(2)
+```

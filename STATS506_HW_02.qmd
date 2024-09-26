@@ -1,0 +1,420 @@
+---
+title: "STATS506_HW_02"
+format: 
+  html:
+    embed-resources: true
+    
+editor: visual
+---
+
+github link: <https://github.com/juanitaW12/stats506>
+
+## Load packages
+
+```{r}
+library(readr)
+library(dplyr)
+library(quarto)
+library(ggplot2)
+library(interactions)
+library(microbenchmark)
+```
+
+## Problem 1
+
+### (a)
+
+```{r}
+# version—1, using loop
+
+#' Function for calculating total winnings in the dice game, Version 1
+#'
+#' @param n 
+#'
+#' @return total_winnings
+#' @export 
+#'
+#' @examples
+#'
+version_1 <- function(n) {
+  total_winnings <- 0  # total winned money
+  
+  for (i in 1:n) { # n rounds of games
+    roll <- sample(1:6, 1)  # the dice in a single round
+    if (roll == 3 || roll == 5) {  # if winning
+      total_winnings <- total_winnings + 2 * roll - 2 # mimus the cost
+    }
+    else{  # if losing
+      total_winnings <- total_winnings - 2
+    }
+  }
+  
+  return(total_winnings)
+}
+
+```
+
+```{r}
+# version-2, using built-in R vectorized functions
+
+#' Function for calculating total winnings in the dice game, Version 2
+#'
+#' @param n 
+#'
+#' @return total_winnings
+#' @export 
+#'
+#' @examples
+#'
+version_2 <- function(n){
+  
+  rolls <- sample(1:6, n, replace = TRUE) # a list of results for each die rolled
+  winnings <- ifelse(rolls %in% c(3,5), 2*rolls -2, -2)  
+  # a list of the winning in each round of the game
+  
+  total_winnings <- sum(winnings) # sum of winnings
+  
+  return(total_winnings)
+}
+```
+
+```{r}
+# version-3, rolling all the dice into one and collapsing the die rolls into a single table()
+
+#' Function for calculating total winnings in the dice game, Version 3
+#'
+#' @param n 
+#'
+#' @return total_winnings
+#' @export 
+#'
+#' @examples
+#'
+version_3 <- function(n){
+  
+  rolls <- sample(1:6, n, replace = TRUE) # a list of results for each die rolled
+  roll_table <- table(rolls) # outputting the frequency of all results 
+  
+  winnings <- (roll_table["3"] * 2 * 3) + (roll_table["5"] * 2 * 5) 
+  # the total winnings if winning games
+  
+  winnings[is.na(winnings)] <- 0 # if losing all rounds of games
+
+  total_winnings <- as.numeric(winnings) - 2 * n # minus the costs
+  
+  return(total_winnings)
+}
+
+```
+
+```{r}
+# version-4, using apply
+
+#' Function for calculating total winnings in the dice game, Version 4
+#'
+#' @param n 
+#'
+#' @return total_winnings
+#' @export 
+#'
+#' @examples
+#'
+version_4 <- function(n){
+  
+  rolls <- sample(1:6, n, replace = TRUE) # a list of results for each die rolled
+  
+  winnings <- sapply(rolls, function(x) ifelse(x %in% c(3, 5), 2 * x - 2, -2)) 
+  # winnings in each round
+  
+  total_winnings <- sum(winnings)
+  
+  return(total_winnings)
+}
+
+```
+
+### (b)
+
+```{r}
+print('The results of version-1:')
+print(version_1(3))
+print(version_1(3000))
+print('The results of version-2:')
+print(version_2(3))
+print(version_2(3000))
+print('The results of version-3:')
+print(version_3(3))
+print(version_3(3000))
+print('The results of version-4:')
+print(version_4(3))
+print(version_4(3000))
+```
+
+### (c)
+
+To ensure reproducibility, I will set a same random seed for four versions of functions.
+
+```{r}
+set.seed(1) # for reproducibility
+print('The results of version-1:')
+print(version_1(3))
+print(version_1(3000))
+
+set.seed(1)
+print('The results of version-2:')
+print(version_2(3))
+print(version_2(3000))
+
+set.seed(1)
+print('The results of version-3:')
+print(version_3(3))
+print(version_3(3000))
+
+set.seed(1)
+print('The results of version-4:')
+print(version_4(3))
+print(version_4(3000))
+```
+
+We can see all the results of four versions are same.
+
+### (d)
+
+```{r}
+performance <- microbenchmark(
+  version_1(1000),
+  version_2(1000),
+  version_3(1000),
+  version_4(1000),
+  version_1(100000),
+  version_2(100000),
+  version_3(100000),
+  version_4(100000)
+)
+performance
+```
+
+According to the performance results above, the speed of version_2, which uses built-in R vectorized functions, is the greatest. Following closely is version_3, which uses the table() function. Version_4, which relies on loops, ranks third in speed, while version_1, which uses `apply()`, shows the slowest performance.
+
+### (e)
+
+Firstly, I will define a fair game here. if the average winnings across all simulations equal the cost to play, it is a fair game for both the player and dealer.
+
+Then, I need to compare the average winnings to the cost per round. Specifically, if the ratio of average winnings to average costs is close to 1, the game can be considered fair.
+
+```{r}
+# creating a function for Monte Carlo simulation
+monte_carlo_simulation <- function(n, rolls) {
+  total_winnings <- numeric(n) # iterations
+  
+  for (i in 1:n) {
+    total_winnings[i] <- version_2(rolls) # using the fastest version of function
+  }
+  comparision_result <- mean(total_winnings / rolls) 
+  
+  return(comparision_result)
+}
+
+```
+
+```{r}
+result1 <- monte_carlo_simulation(1000000, 1)
+print(result1)
+
+result2 <- monte_carlo_simulation(1000000, 10)
+print(result2)
+```
+
+It shows that the game is not fair.
+
+## Problem 2
+
+### (a)
+
+Firstly, I will import the cars data. I will rename the columns' names after investigating the original variable names.
+
+```{r}
+# importing the cars data
+data_path <- file.path( "cars.csv")
+cars <- read.csv(data_path, sep = ",", header = TRUE)
+# outputting columns' names 
+colnames(cars)
+
+```
+
+```{r}
+# renaming the columns of the data to more reasonable lengths.
+column_names <- c("D_Height", 
+                  "D_Length",
+                  "D_Width", 
+                  "Engine_Driveline",
+                  "Engine_Type",
+                  "Engine_Hybrid", 
+                  "Engine_Number_Gears",
+                  "Engine_Transmission",
+                  "Fuel_City_mpg",
+                  "Fuel_Type",
+                  "Fuel_Highway_mpg", 
+                  "ID_Classification",
+                  "ID", 
+                  "ID_Make",
+                  "ID_Model_Year",
+                  "ID_Year",
+                  "Engine_Horsepower",
+                  "Engine_Torque")
+
+colnames(cars) <- column_names
+colnames(cars)
+
+```
+
+### (b)
+
+```{r}
+# restricting the data to cars whose Fuel Type is “Gasoline”.
+cars_gasoline <- subset(cars, Fuel_Type == "Gasoline")
+head(cars_gasoline)
+```
+
+### (c)
+
+Firstly, I will output the summary and the distribution plot of MPG in highway.
+
+```{r}
+summary(cars_gasoline$Fuel_Highway_mpg)
+```
+
+```{r}
+# outputting the visualization of the distribution of MPG in highway
+ggplot(cars_gasoline, aes(x = Fuel_Highway_mpg)) + 
+  geom_histogram(aes(y = ..density..), bins = 50) +
+  geom_density(color = "red") + 
+  labs(title = "Histogram and Density Plot of Highway MPG", x = "Highway MPG", y = "density")
+
+```
+
+Then, I use Shapiro-Wilk test to check for the normality.
+
+```{r}
+# shapiro-wilk test
+shapiro_test <- shapiro.test(cars_gasoline$Fuel_Highway_mpg)
+shapiro_test
+```
+
+Obviously, p-value is less than 0.05. So the distribution of data is not normal. And the skewness of the data is right-skewed, so I decide to use a log transformation.
+
+```{r}
+# applying the transformation
+cars_gasoline$logMPG <- log(cars_gasoline$Fuel_Highway_mpg)
+
+# visualizing the transformated MPG data
+ggplot(cars_gasoline, aes(x = logMPG)) + 
+  geom_histogram(aes(y = ..density..), bins = 50) +
+  geom_density(color = "red") + 
+  labs(title = "Histogram and Density Plot of log(Highway MPG)", x = "log(Highway MPG)", y = "density")
+```
+
+### (d)
+
+I will fit a linear regression model to predict highway MPG, using torque as a continuous variable while controlling for horsepower, dimensions, and year, which will be treated as a categorical variable.
+
+```{r}
+# converting cars_gasoline$ID_Year to a categorical variable
+cars_gasoline$ID_Year <- as.factor(cars_gasoline$ID_Year)
+
+# fitting linear regression 
+model_d <- lm(Fuel_Highway_mpg ~ Engine_Torque + Engine_Horsepower + D_Height +
+                D_Length + D_Width + ID_Year,
+              data = cars_gasoline)
+
+```
+
+```{r}
+summary(model_d)
+```
+
+As shown above, the relationship between torque and highway MPG is negative. The torque coefficient is -0.0507425, which means that a one-unit change in torque results in a change of -0.0507425 units in highway MPG, when controlling horsepower, dimensions and year.
+
+Besides, the p-value for the torque coefficient is less than 2e-16, which is definitely less than 0.05. So the torque coefficient is statistically significant.
+
+### (e)
+
+As there may be an interaction between torque and horsepower, I will fit the interaction model.
+
+```{r}
+# the interaction model
+model_e <- lm(Fuel_Highway_mpg ~ Engine_Torque*Engine_Horsepower + D_Height + D_Length + D_Width + ID_Year,
+              data = cars_gasoline)
+
+summary(model_e)
+```
+
+Next, I will print the summary of Engine_Torque and Engine_Horsepower to choose reasonable values.
+
+```{r}
+print('summary of Engine_Torque:')
+summary(cars_gasoline$Engine_Torque)
+
+print('summary of Engine_Horsepower:')
+summary(cars_gasoline$Engine_Horsepower)
+```
+
+For torque, I choose the minimum, median, and maximum of torque as pred.values.
+
+For horsepower, I choose the mean, mean+1\*SD, mean-1\*SD of horsepower values as modx.values, which are the default values.
+
+```{r}
+median_torque <- median(cars_gasoline$Engine_Torque)
+max_torque <- max(cars_gasoline$Engine_Torque)
+min_torque <- min(cars_gasoline$Engine_Torque)
+torque_values = c(min_torque, median_torque, max_torque)
+
+```
+
+Finally, I will generate an interaction plot.
+
+```{r}
+# Create a grid of values for the plot, controlling for year as 2010
+interaction_plot <- interact_plot(model_e,
+                                  pred = Engine_Torque,
+                                  modx = Engine_Horsepower,
+                                  at = list(ID_Year = '2010'),
+                                  pred.values = torque_values,
+                                  interval = TRUE)
+
+# Add labels and title
+interaction_plot + 
+  labs(title = "Interaction Plot: Torque vs. Highway MPG at Different Levels of Horsepower",
+       x = "Torque",
+       y = "Highway MPG") +
+  theme_minimal()
+```
+
+### (f)
+
+In this part, I will firstly create the design matrix, and then use the equation - beta = (X'X)\^-1 X'y - to calculate beta. Then I will compare the result to the that in linear regression of (d).
+
+```{r}
+# creating the design matrix
+X <- model.matrix(~ Engine_Torque + Engine_Horsepower + D_Height + 
+                    D_Length + D_Width + ID_Year, 
+                  data = cars_gasoline)
+y <- cars_gasoline$Fuel_Highway_mpg
+```
+
+```{r}
+# calculating coefficients manually
+# (X'X)^-1
+XtX_inv <- solve(t(X) %*% X) 
+
+# X'y
+XtY <- t(X) %*% y   
+
+# beta = (X'X)^-1 X'y
+beta_f <- XtX_inv %*% XtY  
+
+beta_f
+summary(model_d)$coefficients
+```
+
+As shown above, they have same results.

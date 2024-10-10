@@ -1,0 +1,475 @@
+---
+title: "STATS506_HW_03"
+format: 
+  html:
+    embed-resources: true
+    
+editor: visual
+jupyter: python3
+---
+
+github link: <https://github.com/juanitaW12/stats506>
+
+## Load packages
+
+```{r}
+library(readr)
+library(dplyr)
+library(quarto)
+library(knitr)
+library(haven)
+library(broom)
+library(RSQLite)
+library(pscl)
+library(stringr)
+
+```
+
+## Problem 1 **- Vision**
+
+### (a)
+
+Since the format of files is **xpt**, I will use package heaven to read them.
+
+```{r}
+# load data sets
+vix <- read_xpt('VIX_D.XPT')
+demo <- read_xpt('DEMO_D.XPT')
+
+# merge the two data sets
+vix_demo <- merge(vix, demo, by = 'SEQN', all = FALSE)
+print(nrow(vix_demo)) # the result shoule be 6980
+```
+
+### (b)
+
+#### Clean data
+
+According to the file, VIX_D, values of 1 and 2 represent that respondents wore glasses/contacts, respectively, while **np.na** represents the missing values. Besides, there are two values of 9 representing that it is unknown whether respondents wore glasses/contacts.
+
+I will drop the rows where values are 9 and missing, creating a new dataframe named vix_demo_bi. Then I will replace the original values with 0 and 1.
+
+1 represents wear glasses/contacts while 0 indicates the opposite.
+
+```{r}
+# create a new dataframe
+vix_demo_bi <- vix_demo %>%
+  filter(vix_demo$VIQ220 %in% c(1,2))
+# replave the value with 1 and 0
+vix_demo_bi$VIQ220 <- ifelse(vix_demo_bi$VIQ220 == 1, 1, 0)
+
+```
+
+#### Choose proper variable
+
+In this question, I will choose **RIDAGEYR** as the age variable because it is measured in years rather than months.
+
+```{r}
+# investigate the data of age
+summary(vix_demo_bi$RIDAGEYR)
+
+# create age bracket
+vix_demo_bi <- vix_demo_bi %>%
+  mutate(
+    age_bracket = cut(
+      RIDAGEYR, 
+      breaks = seq(10, 90, by = 10), # valus are based on investigation
+      right = FALSE
+      )
+    )
+
+```
+
+#### Calculate proportion
+
+```{r}
+# caalculate proportion in each group
+# VIQ220: Glasses/contact lenses worn for distance
+proportions <- vix_demo_bi %>%
+  group_by(age_bracket) %>% 
+  summarise(
+    proportion = mean(VIQ220 == 1, na.rm = TRUE),
+    )
+
+# generate the table 
+kable(
+  proportions, 
+  caption = 'Proportions of Respondents Wearing Glasses/contacts for Distance Vision within Age Bracket'
+  )
+
+```
+
+### (c)
+
+#### Fit models
+
+```{r}
+# model1: RIDAGEYR
+model1 <- glm(VIQ220 ~ RIDAGEYR, data = vix_demo_bi, family = binomial)
+
+# model2: RIDAGEYR, RIDRETH1, RIAGENDR(male = 1, female =2), 
+model2 <- glm(
+  VIQ220 ~ RIDAGEYR + RIDRETH1 + RIAGENDR, 
+  data = vix_demo_bi, 
+  family = binomial
+  )
+
+# model3: RIDAGEYR, RIDRETH1, RIAGENDR，INDFMPIR
+model3 <- glm(
+  VIQ220 ~ RIDAGEYR + RIDRETH1 + RIAGENDR + INDFMPIR,
+  data = vix_demo_bi, 
+  family = binomial
+  )
+
+```
+
+#### Create a table to include requested values
+
+-   An **odds ratio** (**OR**) is a statistic that quantifies the strength of the association between two events, A and B. exp⁡(β\^x) is an estimate of this conditional odds ratio.\*
+
+-   Pseudo R\^2(McFadden R\^2) is used when the outcome variable is nominal or ordinal such that the coefficient of determination R\^2 cannot be applied as a measure for goodness of fit and when a likelihood function is used to fit a model.\*
+
+-   AIC is used to compare different possible models and determine which one is the best fit for the data. AIC is calculated from: the number of independent variables used to build the model. the maximum likelihood estimate of the model (how well the model reproduces the data).\*
+
+    \*These definitions are from Wikipedia.
+
+```{r}
+# estimated odds 
+estimate <- bind_rows(
+  list(tidy(model1), tidy(model2), tidy(model3)),
+  .id = 'model') %>%
+  mutate(odds_ratio = exp(estimate)) %>%  #estimated odds
+  select(model, term, odds_ratio) 
+
+# AIC and sample size
+AIC <- bind_rows(
+  list(glance(model1), glance(model2), glance(model3)),
+  .id ='model') %>%
+  select(model, AIC, nobs) %>%
+  rename(sample_size = 'nobs')
+
+# pseudo R^2
+pseudo_R_2 <- bind_rows(
+  list(pR2(model1), pR2(model2), pR2(model3)),
+  .id = 'model') %>%
+  select(model, McFadden) %>%
+  rename(pseudo_R_2 = 'McFadden')
+
+```
+
+```{r}
+# join data
+final_table <- estimate %>%
+  left_join(AIC, by = 'model') %>%
+  left_join(pseudo_R_2, by = 'model')
+
+kable(final_table, format = "html", caption = "Model Estimates, sample size, AIC, and Pseudo R²")
+
+```
+
+### (d)
+
+#### Test whether estimated odds ratio differs
+
+In statistical analysis, the estimated odds ratio indicates a significant difference between groups when:\*
+
+-   **The confidence interval does not include 1**: The 95% confidence interval for the odds ratio does not include the value 1.
+
+-   **The p-value is less than 0.05**: The p-value from the z-test or Wald test for the coefficient is less than the threshold (often set at 0.05).
+
+\* The principle is from ChatGPT.
+
+```{r}
+# test for odds difference between genders
+# p-value
+# According to (C), odds ratio value in model 3 is exp(5.185954e-01), which equals 1.68
+summary(model3)$coef['RIAGENDR',]
+```
+
+```{r}
+# confidence interval for the odds ratio
+confint_values <- confint(model3, parm = "RIAGENDR")
+odds_ratio_confint <- exp(confint_values)
+
+# confidence interval
+cat("95% Confidence Interval for Odds Ratio:", odds_ratio_confint, "\n")
+```
+
+The p-value(9.508976e-22) is far less than 0.05 and the confidence interval does not include value of 1, so the estimated odds ratio indicates a significant difference between gender groups.
+
+#### Test whether proportion differs
+
+```{r}
+# calculare the proportion and counts for each gender
+gender_proportions <- vix_demo_bi %>%
+  group_by(RIAGENDR) %>%
+  summarise(
+    proportion = mean(VIQ220 == 1),
+    counts = sum(VIQ220 == 1),
+    sum_number = n()  
+  )
+
+gender_proportions
+
+```
+
+```{r}
+# Two-Proportions Z-Test
+prop_test <- prop.test(
+  gender_proportions$counts,
+  gender_proportions$sum_number
+  )
+
+# Print results
+cat("Proportion test:\n")
+print(prop_test)
+```
+
+As shown above, p-value (2.2e-16) is less than 0.05. So there is a significant difference in proportion between gender groups.
+
+## Problem 2 - **Sakila**
+
+Firstly, I will connect to the database SQL and generate a function to extract data.
+
+```{r}
+con <- dbConnect(SQLite(), 'sakila.db')
+
+# 
+#' function of extracting
+#'
+#' @param connection 
+#' @param query 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+get_data <- function(connection, query){
+  # extract data
+  result <- dbGetQuery(connection, query)
+  
+  return(result)
+}
+```
+
+### (a)
+
+```{r}
+query_a <- "
+SELECT 
+  MIN(release_year) AS oldest_movie_year,
+  COUNT(*) AS movies_count
+FROM 
+  film
+HAVING 
+  release_year = MIN(release_year)"
+
+a_film <- get_data(con, query_a)
+print(a_film)
+
+```
+
+### (b)
+
+In this question, to use regular R operations, I will firstly extract all data from film, film_category and category. Then, I will merge film with film_category on **FILM_ID** and merge this new result with category on **CATEGORY_ID**.
+
+```{r}
+# use regular R operations 
+
+# extract data
+film_original <- get_data(con, "SELECT * FROM film")
+category_id <- get_data(con, "SELECT category_id, film_id FROM film_category")
+category_name <- get_data(con, "SELECT category_id, name FROM category")
+
+# merge three tables 
+film_category_id <- merge(film_original, category_id, by = "film_id", all = FALSE)
+film_category <- merge(film_category_id, category_name, by = "category_id", all = FALSE)
+
+# calculate the number of films in each category
+category_counts <- film_category %>%
+  group_by(category_id,name) %>% 
+  summarise(count = n(), .groups = 'drop') %>%
+  arrange(count)
+
+print(head(category_counts,1))
+```
+
+As shown above, music of movie is the least common in the data, and 51 movies are of this genre.
+
+```{r}
+# use a single SQL query
+query_least_category <- "
+SELECT
+  c.name,
+  COUNT(f.film_id) as film_count
+  from film f
+JOIN
+  film_category fc ON f.film_id = fc.film_id
+JOIN
+  category c ON fc.category_id = c.category_id
+GROUP BY 
+  c.name
+ORDER BY 
+  film_count ASC
+LIMIT 1
+"
+category_counts_SQL<- get_data(con,query_least_category)
+print(category_counts_SQL)
+```
+
+### (c)
+
+```{r}
+# use regular R operations 
+
+# extract data
+customer_data <- get_data(con, "SELECT * FROM customer")
+address_data <- get_data(con, "SELECT city_id, address_id FROM address")
+city_data <- get_data(con, "SELECT city_id, country_id FROM city")
+country_data <- get_data(con, "SELECT country_id, country FROM country")
+
+# merge the four data
+customer_country <- customer_data %>%
+  left_join(address_data, by = 'address_id') %>%
+  left_join(city_data, by = 'city_id') %>%
+  left_join(country_data, by = 'country_id')
+
+# caculate the number of customers in each country 
+customer_counts_13 <- customer_country %>%
+  group_by(country) %>%
+  summarise(count = n()) %>%
+  filter(count == 13) # filter the value
+
+print(customer_counts_13)
+```
+
+As shown above, Argentina and Nigeria has
+
+```{r}
+# use a single SQL query
+query_customer_counts_13 <- "
+SELECT
+  co.country,
+  COUNT(cu.customer_id) as customer_count
+  from customer cu
+JOIN
+  address a ON cu.address_id = a.address_id
+JOIN
+  city ci ON a.city_id = ci.city_id
+JOIN 
+  country co ON ci.country_id = co.country_id
+GROUP BY 
+  co.country
+HAVING customer_count == 13
+"
+customer_counts_13_SQL<- get_data(con,query_customer_counts_13)
+print(customer_counts_13_SQL)
+```
+
+## Problem 3 - **US Records**
+
+### (a)
+
+```{r}
+# load the data
+us_500 <- read_csv('us-500.csv', show_col_types = FALSE)
+
+# calculate the proportion of email address with .com TLD
+com_proportion <- us_500 %>%
+  mutate(
+    domain = sub('.*@', '', email),  # extract domain from email
+    tld = sub('.*\\.', '', domain) # extract TLD
+    ) %>% 
+  summarize(proportion_com = mean(tld == 'com', na.rm = TRUE)) # calculate proportion
+
+print(com_proportion)
+```
+
+### (b)
+
+Since dots exist in both parts before and after \@, I decide to extract the part of email address before \@.
+
+```{r}
+# extract the part of email address before @.
+local_parts <- str_extract(us_500$email, "^[^@]+")
+
+# calculate the number of address including non-alphanumeric characters
+non_alphanumeric_count <- data.frame(local_parts) %>% 
+  filter(grepl('[^a-zA-Z0-9]', local_parts)) %>%
+  nrow()
+
+# calculate the proportion
+proportion_non_alnum <- non_alphanumeric_count/ nrow(us_500)
+
+cat("Proportion of email addresses with at least one non-alphanumeric characters:", proportion_non_alnum, "\n")
+
+```
+
+### (c)
+
+```{r}
+# extract area codes
+area_codes_1 <- substr(us_500$phone1, 1, 3)
+area_codes_2 <- substr(us_500$phone2, 1, 3)
+area_codes <- c(area_codes_1, area_codes_2)
+
+# find the top 5 most common area codes
+top5_area_codes <- sort(table(area_codes), decreasing = TRUE)[1:5]
+
+print(top5_area_codes)
+
+```
+
+### (d)
+
+There are two kinds of address like '6649 N Blue Gum St' and '8 W Cerritos Ave #54'. According to the instruction, the later kind is what I need to deal with. When extracting apartment numbers, it will return np.na for the first kind of address while it will return the apartment number for the later.
+
+```{r}
+address <- us_500$address
+apt_numbers <- as.numeric(str_extract(address, "\\d+$"))
+```
+
+```{r}
+# extract apartment numbers
+address <- us_500$address
+apt_numbers <- as.numeric(str_extract(address, "\\d+$"))
+
+# remove NA values
+apt_numbers <- apt_numbers[!is.na(apt_numbers)]
+
+# log transformation
+log_apt_numbers <- log(apt_numbers)
+
+# generate histogram
+hist(log_apt_numbers, main="Histogram of Log Apartment Numbers", 
+     xlab="Log of Apartment Numbers", breaks = 20)
+
+```
+
+### (e)
+
+```{r}
+# extract the leading digit
+leading_digit <- as.numeric(substr(apt_numbers, 1, 1))
+
+# calculate the frequency
+leading_digit_freq <- table(leading_digit)
+# the observed probability
+observed_prob <- leading_digit_freq / sum(leading_digit_freq)
+
+# Benford's Law expected probability for each digit
+benford_prob <- log10(1 + 1/1:9)
+
+# comparison 
+comparison_df <- data.frame(
+  Digit = 1:9,
+  Observed = as.numeric(observed_prob),
+  Benford = benford_prob
+)
+
+comparison_df
+```
+
+As shown above, the apartment numbers appear to follow Benford’s law. But I think if there are many enough data, the apartment numbers would pass as real data. The number of apartment numbers here is very small.
+
+![](https://errickson.goatcounter.com/count?p=506_F24_ps3)

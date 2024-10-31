@@ -1,0 +1,290 @@
+---
+title: "STATS506_HW_04"
+format: 
+  html:
+    embed-resources: true
+    
+editor: visual
+---
+
+github link: <https://github.com/juanitaW12/stats506>
+
+## Load packages
+
+```{r}
+library(readr)
+library(tidyverse)
+library(nycflights13)
+library(dplyr)
+```
+
+## **Problem 1 - Tidyverse**
+
+### (a)
+
+```{r}
+# the mean and median departure delay per airport
+departure_delays <- flights %>%
+  group_by(origin) %>% 
+  summarise(
+    avg_dep_delay = mean(dep_delay, na.rm = TRUE),  # the mean
+    med_dep_delay = median(dep_delay, na.rm = TRUE), # the median
+  ) %>%
+  arrange(desc(avg_dep_delay)) %>%
+  left_join(airports, by = c("origin" = "faa")) %>% # join airports to get the name of airports
+  select(airport_name = name, avg_dep_delay, med_dep_delay)
+
+```
+
+```{r}
+# print departure delays tibble
+departure_delays
+```
+
+```{r}
+# the mean and median arrival delay per airport
+arrival_delays <- flights %>%
+  group_by(dest) %>%
+  summarise(
+    avg_arr_delay = mean(arr_delay, na.rm = TRUE),
+    med_arr_delay = median(arr_delay, na.rm = TRUE),
+    flight_count = n()
+  ) %>%
+  filter(flight_count >= 10) %>%
+  arrange(desc(avg_arr_delay)) %>%
+  left_join(airports, by = c("dest" = "faa")) %>%
+  select(airport_name = name, avg_arr_delay, med_arr_delay, flight_count)
+
+```
+
+```{r}
+# print arrival delays tibble
+print(arrival_delays)
+
+```
+
+### (b)
+
+```{r}
+fastest_plane_model <- flights %>%
+  # calculate the hourly speed of every flight
+  mutate(fight_speed = distance / (air_time / 60)) %>%  
+  left_join(planes, by = "tailnum") %>% # to get the model name
+  group_by(model) %>%
+  summarise(
+    avg_speed = mean(fight_speed),
+    flight_count = n()
+  ) %>%
+  arrange(desc(avg_speed)) %>%
+  slice(1) %>%
+  select(model, avg_speed, flight_count)
+```
+
+```{r}
+print(fastest_plane_model)
+
+```
+
+## **Problem 2 - `get_temp()`**
+
+```{r}
+nnmaps = read.csv('./chicago-nmmaps.csv')
+```
+
+```{r}
+get_temp <- function(month, year, data, celsius = FALSE, average_fn = mean) {
+  
+  # convert any format of the month to number
+  # if month is a number, month = month
+  # if month is a character
+  if (is.character(month)) { 
+    month_numeric <- match(tolower(month), tolower(month.abb))
+    
+    # if not matching
+    if (is.na(month_numeric)) {
+      month_numeric <- match(tolower(month), tolower(month.name))
+    }
+    
+    month <- month_numeric
+  }
+  
+  # set error warning
+  if (is.na(month) || month < 1 || month > 12) {
+    print(" Please input a month as a number (1-12) or a string (e.g., 'Apr').")
+  }
+  
+  # filter data and calculate average temperature
+  result <- data %>%
+    filter(year == !!year, month_numeric == !!month) %>%
+    summarise(avg_temp = average_fn(temp)) %>%
+    pull(avg_temp) # select the single value
+  
+  # convert celsius to fahrenheit
+  if (celsius) { # if celsius = TRUE
+    result <- (result * 1.8) + 32
+  }
+  
+  return(result)
+}
+
+```
+
+```{r}
+get_temp("Apr", 1999, data = nnmaps)
+
+```
+
+```{r}
+get_temp("Apr", 1999, data = nnmaps, celsius = TRUE)
+
+```
+
+```{r}
+get_temp(10, 1998, data = nnmaps, average_fn = median)
+```
+
+```{r}
+get_temp(13, 1998, data = nnmaps)
+```
+
+```{r}
+get_temp(2, 2005, data = nnmaps)
+```
+
+```{r}
+get_temp("November", 1999, data =nnmaps, celsius = TRUE,
+         average_fn = function(x) {
+           x %>% sort -> x
+           x[2:(length(x) - 1)] %>% mean %>% return
+         })
+
+```
+
+## **Problem 3 - Visualization**
+
+```{r}
+market = read.csv("./df_for_ml_improved_new_market.csv")
+```
+
+### (a)
+
+```{r}
+# calculate the average price of years 
+# create a line plot for average price over year
+avg_price_plot <- market %>%
+  group_by(year) %>%
+  summarise(avg_price = mean(price_usd)) %>%
+  ggplot(aes(x = year, y = avg_price)) +
+  geom_line(color = "blue", linewidth = 1) +
+  geom_point(size = 3, color = "red") +
+  labs(title = "Average Price(USD) Over Years",
+       x = "Year",
+       y = "Average Price (USD)") +
+  theme_minimal() +
+  theme(text = element_text(size = 12))
+
+```
+
+```{r}
+print(avg_price_plot)
+```
+
+As shown above, there is a change in the sales price in USD over the years. Starting in 2001, the average sales price steadily increased from below 10,000 USD to over 40,000 USD in 2008. Then, the price fell below 30,000 USD, with slight fluctuations from 2008 to 2012.
+
+### (b)
+
+The genres are divided into five kinds: "Photography", "Print", "Sculpture", "Painting" and "Others".
+
+```{r}
+market_genre <- market %>%
+  pivot_longer(cols = starts_with("Genre_"), names_to = "genre", values_to = "present") %>%
+  filter(present == 1) %>% # filter data whose genre is 1
+  select(case_id, year, genre, price_usd)
+
+```
+
+Firstly, I created a percentage bar chart of genres for every year to see the whether the percentage of genres would change.
+
+```{r}
+ggplot(market_genre, aes(x = year, fill = genre)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(title = "Distribution of Genres Over Years",
+       x = "Year",
+       y = "Percentage",
+       fill = "Genre") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+The category "Others" saw a significant decrease in percentage from 1997 to 2003, followed by fluctuations in the subsequent years.
+
+Painting exhibits a similar trend.
+
+Photography started with a lower percentage in the late 1990s but has gradually increased over time. Then this genre shows a steady rise and appears to stabilize in the later years.
+
+From 1997 to 2000, the percentage of printing is very low. And from 2001 to 2012, printing has maintained a relatively consistent proportion over the years, with only minor fluctuations, showing no significant upward or downward trends.
+
+Sculpture firstly significantly increased form 1999 to 2001 and has kept a steady proportion throughout the years, with slight fluctuations and no major trends in increasing or decreasing direction.
+
+In summary, while genres like "Others" and "Painting" experienced initial declines, Photography has shown gradual growth, and Sculpture has remained stable. This suggests shifts in artistic interests over the years, with a rise in Photography and sustained interest in Sculpture.
+
+Then, I calculated the sales of each genres and created stacked bar chart to see if the sales had changes.
+
+```{r}
+genre_sales <- market_genre %>%
+  group_by(year, genre) %>%
+  summarize(total_genre_sales = sum(price_usd),.groups = 'drop') %>%
+  ungroup()
+
+```
+
+```{r}
+ggplot(genre_sales, aes(x = year, y = total_genre_sales, fill = genre)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(title = "Distribution of Total Sales by Genre Across Years",
+       x = "Year",
+       y = "Total Sales (USD)",
+       fill = "Genre") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Total sales across all genres have an increasing tread in total from 1997 to the early 2012, peaking in 2008 before a slight decline. From 2009 to 2012, total sales continued to increase.
+
+The “Others” category saw sporadic increased from 1997 to around 2008 with fluctuations in the following years.
+
+Painting also saw a steady increase in sales over the years and its share of total sales also gradually increased.
+
+Photography consistently generated the highest sales compared to other genres. Its sales increased significantly in 2005. After 2008, Painting maintained a substantial share of the total sales and had no significant change.
+
+Print remained relatively modest throughout the years, with a dramatic changes before and after 2006. But print genre consistently represented a small share of total sales.
+
+Sculpture had a significant increasing trend from 1997 to 2018. Then the sales of Sculpture slightly decreased, with an increase in the later years.
+
+### (c)
+
+In this section, I generated line plots of average price for each genre to see the yearly change.
+
+```{r}
+# calculate the avearge price for each genre
+genre_avg_price <- market_genre %>%
+  group_by(year, genre) %>%
+  summarize(avg_price_usd = mean(price_usd), .groups = 'drop')
+```
+
+```{r}
+ggplot(genre_avg_price, aes(x = year, y = avg_price_usd, color = genre, group = genre)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Average Sales Price by Genre Over Time",
+       x = "Year",
+       y = "Average Sales Price (USD)",
+       color = "Genre") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Overall, the average price for each genre shows an upward trend, peaking in 2008. After that, the prices experienced a slight decline followed by minor fluctuations.
+
+The average price for Photography has consistently been the highest among the five genres, followed by the Print genre. The average prices of the other three genres are relatively close to each other. Notably, the Print genre exhibits more significant price volatility.

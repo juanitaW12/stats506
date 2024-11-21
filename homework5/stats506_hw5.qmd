@@ -1,0 +1,595 @@
+---
+title: "homework 5"
+format: 
+  html:
+    embed-resources: true
+execute: 
+  error: true
+  echo: true
+editor: visual
+---
+
+github link: <https://github.com/juanitaW12/stats506>
+
+```{r}
+library(Rcpp)
+library(nycflights13)
+library(data.table)
+library(ggplot2)
+library(plotly)
+library(dplyr)
+
+
+```
+
+## Problem 1
+
+In this question, the final output will be a string like “1/6”. For an integer such as 4, it will be shown as "4/1".
+
+### Define functions of GCD and LCM
+
+I can not use the Rcpp to create two functions at the same time for some reason I can not clarify. So I create a .cpp file to store these two functions. And the following is the code in the file named GCD_LCM.cpp.
+
+```{r}
+# Define function of GCD and LCM
+# This part is based on ChatGPT.
+
+# #include <Rcpp.h>
+# using namespace Rcpp;
+# 
+# // GCD
+# int GCD(int a, int b) {
+#   if (b == 0)
+#     return a;
+#   return GCD(b, a % b); 
+# }
+# 
+# // LCM
+# int LCM(int a, int b) {
+#   return (a * b) / GCD(a, b);
+# }
+# 
+# // [[Rcpp::export]]
+# int gcd(int a, int b) {
+#   return GCD(a, b);
+# }
+# 
+# // [[Rcpp::export]]
+# int lcm(int a, int b) {
+#   return LCM(a, b);
+# }
+
+```
+
+```{r}
+# import the file to apply gcd and lcm function
+sourceCpp("gcd_lcm.cpp")
+
+```
+
+### Create class
+
+```{r}
+# 1. Create the 'rational' class where numerator and denominator are integers
+setClass("rational", 
+         slots = c(numerator = "numeric", 
+                      denominator = "numeric"))
+
+# Constructor for rational class
+rational <- function(numerator, denominator) {
+  new("rational", numerator = numerator, denominator = denominator)
+}
+
+```
+
+If there is an error, I will show it instead of stop here since it is required not to stop on errors.
+
+```{r}
+# 2. Validity funtion 
+# check if inputs are integers and if denominator is eauql to 0
+
+validity <- function(object) {
+  # check if there is missing values
+  if(any(is.na(object@numerator), is.na(object@denominator))) {
+    return("Numerator and Denominator must be non-NA integers")
+  }
+  
+  # check if numerator and denominator are integars
+  if (object@numerator != as.integer(object@numerator)) {
+    return("Numerator should be integers")
+  }
+  if (object@denominator != as.integer(object@denominator)) {
+    return("Denominator should be integers")
+  }
+  
+  # check if the denominator is 0
+  if(object@denominator == 0) {
+    return("Denominator cannot be zero")
+  }
+  TRUE  # if there is not any error
+}
+
+# set validity function for the class
+setValidity("rational", validity)
+```
+
+```{r}
+# 3. Define show method
+setMethod(
+  "show",
+  "rational",
+  function(object) {
+    cat(paste(object@numerator, "/", object@denominator, "\n")) # a string
+  }
+)
+
+```
+
+```{r}
+# 4. Define simplify method
+setGeneric("simplify", function(object) standardGeneric("simplify"))
+
+setMethod(
+  "simplify",
+  "rational",
+  function(object) {
+    
+    # get common divisor, at least having one of 1
+    common_divisor <- gcd(object@numerator, object@denominator)
+    # simplify numerator and denominator
+    numerator_simplified <- object@numerator / common_divisor
+    
+    denominator_simplified <- object@denominator / common_divisor
+    
+    # input new object to class rational
+    rational(as.integer(numerator_simplified), as.integer(denominator_simplified))
+  }
+)
+
+```
+
+```{r}
+# 5. Define quotient method
+setGeneric("quotient", function(object, digits = 3) standardGeneric("quotient"))
+
+setMethod(
+  "quotient",
+  "rational",
+  function(object, digits = 3) {
+    # the real value
+    result <- as.numeric(object@numerator) / as.numeric(object@denominator) 
+    # print the value with certain digits
+    print(format(result, digits = digits))  
+    
+    return(result)  
+  }
+)
+
+```
+
+For the addition of fractions, the least common multiple (LCM) of the denominators should be found first. The new denominator is the LCM, and the new numerator is the original numerator multiplied by the LCM divided by the original denominator. Then, add the new numerators of the two fractions together, and finally simplify the result.
+
+```{r}
+# 6.Define method of +, -, x, /
+
+# 6.1 +
+setMethod(
+  "+",
+  signature(e1 = "rational", e2 = "rational"),
+  
+  function(e1, e2) {
+    # lcm and new denominator at the same time
+    lcm_denominator <- lcm(e1@denominator, e2@denominator)
+    
+    # new numerators
+    numerator1_new <- e1@numerator * (lcm_denominator / e1@denominator)
+    numerator2_new <- e2@numerator * (lcm_denominator / e2@denominator)
+    # the sum of new numerators
+    sum_numerator <- numerator1_new + numerator2_new
+    
+    # simplify the result
+    simplify(rational(sum_numerator, lcm_denominator))
+  }
+)
+
+```
+
+For the subtraction of fractions, the least common multiple (LCM) of the denominators should be found first. The new denominator is the LCM, and the new numerator is the original numerator multiplied by the LCM divided by the original denominator. Then, subtract the new numerators of the two fractions, and finally simplify the result.
+
+```{r}
+# 6.2 -
+setMethod(
+  "-",
+  signature(e1 = "rational", e2 = "rational"),
+  
+  function(e1, e2) {
+    # lcm and new denominator at the same time
+    lcm_denominator <- lcm(e1@denominator, e2@denominator)
+    
+    # new numerators
+    numerator1_new <- e1@numerator * (lcm_denominator / e1@denominator)
+    numerator2_new <- e2@numerator * (lcm_denominator / e2@denominator)
+    # the difference of new numerators
+    diff_numerator <- numerator1_new - numerator2_new
+    
+    # simplify the result
+    simplify(rational(diff_numerator, lcm_denominator))
+  }
+)
+```
+
+For the multiplication of fractions, multiply the numerators and denominators respectively, and then simplify the result.
+
+```{r}
+# 6.3 x
+setMethod(
+  "*",
+  signature(e1 = "rational", e2 = "rational"),
+  function(e1, e2) {
+    new_numerator <- e1@numerator * e2@numerator
+    new_denominator <- e1@denominator * e2@denominator
+    simplify(rational(new_numerator, new_denominator))
+  }
+)
+
+```
+
+For the division of fractions, multiply the first fraction by the reciprocal of the second fraction, and then simplify the result.
+
+```{r}
+# 6.4 /
+setMethod(
+  "/",
+  signature(e1 = "rational", e2 = "rational"),
+  function(e1, e2) {
+    if (e2@numerator == 0) stop("division by zero not allowed")
+    new_numerator <- e1@numerator * e2@denominator
+    new_denominator <- e1@denominator * e2@numerator
+    simplify(rational(new_numerator, new_denominator))
+  }
+)
+```
+
+### Evaluate the following code
+
+```{r}
+r1 <- rational(24L, 6L)
+r2 <- rational(7L, 230L)
+r3 <- rational(0L, 4L)
+
+```
+
+```{r}
+r1
+r3
+r1 + r2
+r1 - r2
+r1 * r2
+r1 / r2
+r1 + r3
+r1 * r3
+r2 / r3
+```
+
+```{r}
+quotient(r1)
+quotient(r2)
+quotient(r2, digits = 3)
+quotient(r2, digits = 3.14)
+quotient(r2, digits = "avocado")
+
+```
+
+```{r}
+q2 <- quotient(r2, digits = 3)
+q2
+quotient(r3)
+simplify(r1)
+simplify(r2)
+simplify(r3)
+```
+
+### Validator
+
+```{r}
+# check if the validator does not allow the creation of rational’s with 0 denominator
+rational(1, 0)
+```
+
+```{r}
+# check other malformed input
+# 1. if numerator or denominator is not an integer
+rational(1.4, 2)
+```
+
+```{r}
+rational(1, 2.2)
+```
+
+```{r}
+rational(1, 's')
+```
+
+```{r}
+# 2. check if there is a missing value
+rational(1, NA)
+```
+
+## Problem 2
+
+```{r}
+art <- read.csv("./df_for_ml_improved_new_market.csv")
+# clean the genre
+art$Genre___Others[art$Genre___Painting == 1] <- 0
+
+art$genre <- "Photography"
+art$genre[art$Genre___Print == 1] <- "Print"
+art$genre[art$Genre___Sculpture == 1] <- "Sculpture"
+art$genre[art$Genre___Painting == 1] <- "Painting"
+art$genre[art$Genre___Others == 1] <- "Other"
+table(art$genre)
+
+```
+
+### 2.a
+
+In part (a), I use the plot in the file of problem4_solution.
+
+```{r}
+# define the top_values
+##' @title Subset a vector to values above some percentile
+##' @param vec A vector of values
+##' @param percentile A percentile to identify
+select_top_values <- function(vec, percentile) {
+  val <- quantile(vec, percentile)
+  return(vec[vec > val])
+}
+
+# Subset a vector to values above 95 percentile
+save <- list()
+for (y in unique(art$year)) {
+  prices <- art[art$year == y, "price_usd"]
+  save[[as.character(y)]] <-
+    data.frame(year = y,
+               price_usd = select_top_values(prices, .95))
+}
+# We've got a list, use `do.call` to combine them all together
+arttop <- do.call(rbind, save)
+```
+
+```{r}
+# define the median value
+artmedian <- aggregate(art$price_usd, by = list(art$year),
+                       FUN = median, na.rm = TRUE)
+names(artmedian) <- c("year", "price_usd")
+
+# convert the format to factor
+arttop$year <- as.factor(arttop$year)
+artmedian$year <- as.factor(artmedian$year)
+
+```
+
+```{r}
+# Create the box plot for the top 5% prices
+p_a <- plot_ly(data = arttop, x = ~year, y = ~price_usd, type = 'box', 
+             marker = list(outliercolor = "darkred", symbol = "o", size = 4),
+             name = "Top 5% Prices") 
+
+# Add the median prices
+p_a <- add_trace(p_a, data = artmedian, x = ~year, y = ~price_usd, 
+               type = 'scatter', mode = 'lines+markers',
+               line = list(dash = 'dash', width = 1.2),
+               name = "Median Prices")
+
+# Configure the layout
+p_a <- p_a %>% 
+  layout(title = "Changes in Top 5% of Prices",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Price in Million USD",
+                      tickvals = seq(0, 1400000, by = 200000),
+                      ticktext = paste(seq(0, 1.4, 0.2), "M", sep = "")),
+         legend = list(title = list(text = ""), 
+                       x = 0.1, y = 0.95  # Position inside the plot
+                      ))  
+
+p_a
+```
+
+While the median price does not change drastically, we see a large increase in the price for the most expensive sales starting around 2000 until around 2006, at which point it stabilizes.
+
+### 2.b
+
+```{r}
+# calculate the count of genre
+yeargenre <- with(art, table(year, genre))
+
+# calculate the proportion of genre
+ygperc <- yeargenre/apply(yeargenre, 1, sum)
+ygperc <- ygperc[, c("Painting", "Sculpture", "Photography", "Print", "Other")]
+
+ygpercm <- as.data.frame(ygperc)
+# Reverse level of factors so ggplot draws it the same way
+ygpercm$genre <- factor(ygpercm$genre, levels = rev(unique(ygpercm$genre)))
+head(ygpercm)
+```
+
+```{r}
+# define median by year and genre in part b
+artmedian_b <- aggregate(art$price_usd, by = list(art$year, art$genre),
+                   FUN = median, na.rm = TRUE)
+names(artmedian_b) <- c("year", "genre", "price_usd")
+
+# define 97.5 percentile data by year and genre
+art975 <- aggregate(art$price_usd, by = list(art$year, art$genre),
+                   FUN = quantile, .975, na.rm = TRUE)
+names(art975) <- c("year", "genre", "price_usd")
+
+# the names of all arts
+genres <- rev(unique(artmedian$genre))
+
+# convert theformat to factor
+artmedian_b$genre <- factor(artmedian_b$genre, levels = rev(unique(artmedian_b$genre)))
+art975$genre <- factor(art975$genre, levels = rev(unique(art975$genre)))
+
+# bind all the rows and add the label of median or 97.5%
+artcombine <- bind_rows(
+  artmedian_b %>% mutate(measure = "Median"),
+  art975 %>% mutate(measure = "97.5%")
+)
+
+artcombine$genre <- factor(artcombine$genre, levels = rev(unique(artcombine$genre)))
+artcombine$year <- factor(artcombine$year)
+
+head(artcombine)
+```
+
+```{r}
+# Part of the following codes are referenced from ChatGPT.
+
+fig <- plot_ly()
+# Add bar chart to the secondary Y-axis
+fig <- fig %>%
+  add_trace(
+    data = ygpercm, 
+    x = ~year, y = ~Freq, 
+    color = ~genre, 
+    type = 'bar', 
+    hoverinfo = 'text',
+    opacity = 0.2,  # Retain transparency
+    text = ~paste('Year:', year, 
+                  '<br>Genre:', genre, 
+                  '<br>Proportion:', round(Freq*100, 2), '%'), 
+    name = ~genre,
+    yaxis = 'y2',
+    showlegend = TRUE
+  )
+
+# Add line chart for price changes to the primary Y-axis
+fig <- fig %>%
+  add_trace(
+    data = artcombine, 
+    x = ~year, y = ~price_usd, 
+    color = ~genre, 
+    type = 'scatter', mode = 'lines+markers',
+    hoverinfo = 'text',
+    text = ~paste('Year:', year, '<br>Genre:', genre, 
+                  '<br>Price (USD):', price_usd, '<br>Measure:', measure),
+    name = ~paste(genre, measure), 
+    yaxis = 'y', 
+    showlegend = TRUE
+  )
+
+# Add layout and axis settings
+fig <- fig %>%
+  layout(
+    title = "Changes in Price and Proportion by Genre Over Time",
+    xaxis = list(title = 'Year'),
+    yaxis = list(
+      title = 'Price in Thousands USD', 
+      tickvals = seq(0, 400000, by = 50000),
+      ticktext = paste0(seq(0, 70, by = 10), 'k')
+    ),
+    yaxis2 = list(
+      title = 'Proportion (%)', 
+      overlaying = 'y', 
+      side = 'right', 
+      rangemode = "tozero"
+    ),
+    barmode = 'stack',  # Set barmode to stack
+    legend = list(
+      orientation = 'v',       # Vertical legend
+      x = 1.2,                 # Move legend to the right, outside the chart area
+      y = 1,                   # Align legend to the top
+      xanchor = 'left',        # Anchor set to left alignment
+      bgcolor = 'rgba(0,0,0,0)'  # Transparent background
+    )
+  )
+
+fig
+
+```
+
+In this chart, the file `problem4_solution` is referenced. It shows the sales proportion of different art genres across different years, as well as the changes in median price and the 97.5% price over time.
+
+We can draw the conclusion that, over time, painting sales were replaced with photo/print sales as the digital age ramped up.
+
+Photography prices increased the most, both in terms of median and large values. Painting/sculpture/print all saw similar but lesser increases.
+
+## Problem 3
+
+### 3.a
+
+```{r}
+# convert the format to data.table
+flights_dt <- as.data.table(flights)
+airports_dt <- as.data.table(airports)
+```
+
+```{r}
+# the average and median departure delay time
+depart_delay_time <- flights_dt[, .(
+  # mean of department delay time
+  mean_delay = mean(dep_delay, na.rm = TRUE), 
+  # median of department delay time
+  med_delay = median(dep_delay, na.rm = TRUE),
+  # the number of flights in every airport
+  numflights = .N  
+),
+# exclude any destination with under 10 flights
+by = origin][numflights >= 10][
+  # left join the table airports where origin equals faa
+  airports, on = .(origin = faa), nomatch = 0
+][, 
+  # filter rows
+  .(name, mean_delay, med_delay)][
+  # order table in descending mean delay
+  order(-mean_delay)]
+
+print(depart_delay_time)
+
+```
+
+```{r}
+arrival_delay_time <- flights_dt[, .(
+  # mean of arrival delay time
+  mean_delay = mean(arr_delay, na.rm = TRUE),
+  # median of arrival delay time
+  med_delay = median(arr_delay, na.rm = TRUE),
+  # the number of flights in every airport
+  numflights = .N
+), 
+# exclude any destination with under 10 flights
+by = .(dest)][numflights >= 10][
+  # left join the table airports where origin equals faa
+  airports, on = .(dest = faa), nomatch = 0
+][, 
+  # filter rows
+  .(name, mean_delay, med_delay)][
+  # order table in descending mean delay
+  order(-mean_delay)]
+
+print(arrival_delay_time)
+```
+
+### 3.b
+
+```{r}
+planes_dt = as.data.table(planes)
+
+top_model <- flights_dt[planes_dt, # merge flights and planes on tailnum
+                        on = .(tailnum)][, `:=`(
+  # calculate the air time in hour
+  time = air_time / 60, 
+  # calculate the mph
+  mph = distance / (air_time / 60)
+)][, .(
+  # calculate the mean mph
+  avgmph = mean(mph, na.rm = TRUE),
+  # the number of filghts
+  numflights = .N
+), 
+by = model][order(-avgmph)][1] #order table in descending average mph
+
+
+print(top_model)
+```

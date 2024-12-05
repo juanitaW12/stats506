@@ -1,0 +1,343 @@
+---
+title: "stats506_hw6"
+format: 
+  html:
+    embed-resources: true
+execute: 
+  error: true
+  echo: true
+editor: visual
+---
+
+github link: <https://github.com/juanitaW12/stats506>
+
+## Load Library
+
+```{r}
+suppressPackageStartupMessages(library(dplyr))
+library(dplyr)
+library(Lahman)
+library(DBI)
+library(parallel)
+library(future)
+library(furrr)
+library(microbenchmark)
+library(ggplot2)
+```
+
+## Load Data
+
+```{r}
+# Import the SQLite database of the Lahman data
+lahman <- dbConnect(RSQLite::SQLite(), "lahman_1871-2022.sqlite")
+lahman
+```
+
+```{r}
+dbListTables(lahman)
+```
+
+In this part, I will import the data required to calculate RF, including playerID, teamID, PO, A and InnOuts from the table **fielding**.
+
+```{r}
+sql_line <- "SELECT playerID, teamID, PO, A, InnOuts From fielding"
+data <- dbGetQuery(lahman, sql_line)
+```
+
+```{r}
+head(data)
+```
+
+As shown above, a single player may play for multiple teams over the course of their career. Next, I need to deal with the missing values and outliers.
+
+## Cleaning Data
+
+### Missing Values
+
+```{r}
+# show if any column has missing values
+sapply(data, function(x) any(is.na(x)))
+
+
+# calculate the percentage of missing values
+colSums(is.na(data))/nrow(data)
+
+```
+
+Only the InnOuts column contains missing values. Since this column is used as the **denominator** and the proportion of missing values is only 0.2 (20%), I will remove all rows with missing values in this column to ensure data integrity.
+
+### **If Denominator is 0**
+
+```{r}
+nrow(data[data$InnOuts == 0, ])/nrow(data)
+```
+
+Since the proportion of rows where InnOuts equals zero is less than 0.2% (0.002), I will remove all such rows to ensure the integrity of the analysis.
+
+```{r}
+data <- data[data$InnOuts != 0, ]
+```
+
+```{r}
+# add a new column of RF
+data <- data %>%
+   mutate(RF = 3 * (PO + A) / InnOuts)
+```
+
+## A. Calculating the Average RF for Each Team
+
+In this part, I will use three methods to calculate average RF for each team.
+
+### Without any Parallel Processing
+
+The following function was adapted with assistance from ChatGPT.
+
+```{r}
+# generate a function
+
+stratified_bootstrapping <- function(data = data, n_bootstrap = 1000) {
+  resampling_rf <- replicate(n_bootstrap, {
+    # Group by team and resample
+    resampled_data <- data %>%
+      group_by(teamID) %>%
+      group_modify( ~ sample_n(.x, size = n(), replace = TRUE)) %>%
+      ungroup()
+    
+    # Calculate the team average RF after resampling
+    resampled_data %>%
+      group_by(teamID) %>%
+      summarise(avg_RF_sample = mean(RF, na.rm = TRUE)) %>%
+      ungroup()
+  }, 
+  # Preserve Original Structure
+  simplify = FALSE)
+  
+  # Merge all the resampling results
+  boot_results <- do.call(rbind, resampling_rf)
+  
+  return(boot_results)
+}
+
+```
+
+```{r}
+# calculate the execution time
+start_time_basic <- Sys.time()
+
+# do stratified bootstrapping
+set.seed(1000)
+bootstrap_results_basic <- stratified_bootstrapping(data, 1000)
+
+end_time_basic <- Sys.time()
+execution_time_basic <- end_time_basic - start_time_basic
+```
+
+```{r}
+# calculate estimated RF and the standard deviation
+RF_std_basic <- bootstrap_results_basic %>%
+  group_by(teamID) %>%
+  summarise(avg_RF_basic = mean(avg_RF_sample), SE_RF_basic = sd(avg_RF_sample))
+
+```
+
+```{r}
+head(RF_std_basic)
+```
+
+### Parallel Processing
+
+```{r}
+# set parallel environment
+cl <- makeCluster(detectCores() - 1)
+
+# Load necessary libraries on worker nodes
+clusterEvalQ(cl, library(dplyr))
+
+# Export the dataset to worker nodes
+clusterExport(cl, "data")
+
+```
+
+```{r}
+# do parallel stratified bootstrapping
+bootstrap_parallel <- function(data = data, n = 1000, cl = cl){
+  parallel_resample_RF <- parLapply(
+    cl,
+    1:n, # bootstrap iterations
+    function(x) {# generate an anonymous function
+      # Group by team and resample
+      resampled_data <- data %>%
+        group_by(teamID) %>%
+        group_modify( ~ sample_n(.x, size = n(), replace = TRUE)) %>%
+        ungroup()
+    
+      # Calculate the team average RF after resampling
+      resampled_data %>%
+        group_by(teamID) %>%
+        summarise(avg_RF_sample = mean(RF, na.rm = TRUE)) %>%
+        ungroup()
+      }
+    )
+  results_parallel <- do.call(rbind, parallel_resample_RF) 
+  
+  return(results_parallel)
+  
+}
+
+```
+
+```{r}
+start_time_parallel <- Sys.time()
+
+set.seed(1000)
+bootstrap_results_parallel <- bootstrap_parallel(data, 1000, cl)
+stopCluster(cl)
+
+end_time_parallel <- Sys.time()
+execution_time_parallel <- end_time_parallel - start_time_parallel
+```
+
+```{r}
+# calculate estimated RF and the standard deviation
+RF_std_parallel <- bootstrap_results_parallel %>%
+  group_by(teamID) %>%
+  summarise(avg_RF_parallel = mean(avg_RF_sample), SE_RF_parallel = sd(avg_RF_sample))
+```
+
+```{r}
+head(RF_std_parallel)
+```
+
+### With Future Package
+
+```{r}
+# set parallel plan
+plan(multisession)
+```
+
+```{r}
+# do stratified bootstrapping
+bootstrap_future <- function(data = data, n = 1000) {
+  results_future <- future_map_dfr(
+    1:n,
+    # 1000 bootstrap iterations
+    ~ { # generate an anonymous function
+      # Group by team and resample
+      resampled_data <- data %>%
+        group_by(teamID) %>%
+        group_modify( ~ sample_n(.x, size = n(), replace = TRUE)) %>%
+        ungroup()
+      # Calculate the team average RF after resampling
+      resampled_data %>%
+        group_by(teamID) %>%
+        summarise(avg_RF_sample  = mean(RF, na.rm = TRUE)) %>%
+        ungroup()
+      }, 
+    .options = furrr_options(seed = TRUE) # Specify parallel-safe seed management
+    )
+  
+  return(results_future)
+  }
+  
+```
+
+```{r}
+start_time_future <- Sys.time()
+
+# set random seed
+set.seed(1000)
+bootstrap_results_future <- bootstrap_future(data, 1000)
+
+end_time_future <- Sys.time()
+execution_time_future <- end_time_future - start_time_future
+```
+
+```{r}
+# calculate estimated RF and the standard deviation
+RF_std_future <- bootstrap_results_future %>%
+  group_by(teamID) %>%
+  summarise(avg_RF_future = mean(avg_RF_sample), SE_RF_future = sd(avg_RF_sample))
+```
+
+```{r}
+head(RF_std_future)
+```
+
+## B. TOP10 Team
+
+The estimated RF is the average RF of all samples.
+
+```{r}
+top10_teams_basic <- RF_std_basic %>%
+  arrange(desc(avg_RF_basic)) %>%
+  slice(1:10)
+
+top10_teams_parallel <- RF_std_parallel %>%
+  arrange(desc(avg_RF_parallel)) %>%
+  slice(1:10)
+
+top10_teams_future <- RF_std_future %>%
+  arrange(desc(avg_RF_future)) %>%
+  slice(1:10)
+
+```
+
+```{r}
+# Merging data frames based on 'teamID'
+compare_results <- merge(
+  top10_teams_basic, 
+  top10_teams_parallel, 
+  by = "teamID", 
+  all = FALSE  # Keep only matching rows
+)
+
+compare_results <- merge(
+  compare_results, 
+  top10_teams_future, 
+  by = "teamID", 
+  all = FALSE  # Keep only matching rows
+)
+```
+
+```{r}
+compare_results
+```
+
+I will round the data to improve clarity and then reanalyze it for further investigation.
+
+```{r}
+compare_results <- compare_results %>%
+  mutate(across(where(is.numeric), ~ round(.x, 2)))
+```
+
+```{r}
+compare_results
+```
+
+## C. Performance Difference between the Versions
+
+Firstly, I will compare the performance difference of three versions from the following two aspects.
+
+### Results Comparision
+
+As shown in the compare_results table, the estimated RF values and associated standard errors for the teams with the 10 highest RFs from the three approaches are highly consistent, with virtually no significant differences.
+
+For some teams, such as KEO, the avg_RF values show slight differences at the third decimal place. These differences are likely due to minor variations in random sampling and are statistically negligible.
+
+### Execution Time
+
+```{r}
+print(paste("Execution Time of basic method:", round(execution_time_basic,2), "mins"))
+
+print(paste("Execution Time of parallel method:", round(execution_time_parallel,2), "mins"))
+
+print(paste("Execution Time using future:", round(execution_time_future,2), "mins"))
+```
+
+As is shown:
+
+1.  The execution time of **Basic Method** is **5.96 minutes**, which is the slowest because it does not leverage multi-core processing. This method runs sequentially on a single thread, processing one task at a time.
+
+2.  The execution time of **Best Use Case** is **1.64 minutes**, which is the quickest because this method distributes tasks across multiple cores, significantly reducing runtime. It can takes advantage of multi-core CPUs to execute tasks concurrently.
+
+3.  The execution time of **Future-Based Method** is **2.92 minutes**, which is the medium running time. This approach also leverages multi-core processing but with more flexibility. Although it is slower than the parallel method but not too much, it is more adaptable to advanced architectures.
